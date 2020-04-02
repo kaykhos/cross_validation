@@ -12,8 +12,6 @@ Functions work on a single anzatz circuit and append single qubit Haar
       - Jobs MUST be grouped at the QuantumRegister level
     + When one or more register grou"""
 
-
-
 import qiskit as qk
 import numpy as np
 import scipy as sp
@@ -26,32 +24,15 @@ try:
 except:
     provider_free = qk.IBMQ.load_account()
 
-def _random_measurement_helper(circ, 
-                               seeds, 
-                               qregs_block=0):
-    # get the registers to measure and add classical bits
-    qregs = circ.qregs[qregs_block]
-    nb_qubits = qregs.size
-    cbits = qk.ClassicalRegister(nb_qubits, 'cl_'+qregs.name)
-    circ.add_register(cbits)
+#%% useful functions
 
-    
-    # generate Haar random (with known seeds)
-   # if type(seeds) is not list:
-   #     seeds = np.random.randint(0, 2**32, nb_qubits)
-    u_random = [qk.quantum_info.random_unitary(2, seed=seeds[ii]) 
-                for ii in range(nb_qubits)]
-    
-    # append unitaries and measure to right classical registers
-    for ii in range(nb_qubits):
-        circ.append(u_random[ii], [qregs[ii]])
-    circ.measure(qregs, cbits)
-    return circ
-    
 def random_measurement(circ, 
                        qregs_block_list=[0],
                        nb_random=5, 
                        seed=10):
+    """ Creates a list of n=nb_random circuits with Haar random unitaries. If
+        mutiple qregs_block_list are passed, each block has the same unitaries
+        - DOES NOT modify input circuit"""
     # input formatting 
     if type(qregs_block_list) == int:
         qregs_block_list = [qregs_block_list]
@@ -70,11 +51,6 @@ def random_measurement(circ,
                                                    seeds=seeds)
         circ_list.append(this_circ)
     return circ_list
-
-
-
-
-
 
 
 def cross_fidelity_from_dual_res(results1, results2, d=2): # d=2 for qubit, 3 for qutrit
@@ -111,32 +87,66 @@ def cross_fidelity_from_dual_res(results1, results2, d=2): # d=2 for qubit, 3 fo
     return F
 
 
+def _random_measurement_helper(circ, 
+                               seeds, 
+                               qregs_block=0):
+    """Appends (seeded) random unitaries for a circuit
+        - Will modify input circ if the input circ is passes as object
+        - Not made to be interacted with directly 
+        - Adds measurement registers with same name as qregs_block
+        - Assumes circuit construction is created with single /mutiple blocks"""
+    # get the registers to measure and add classical bits
+    qregs = circ.qregs[qregs_block]
+    nb_qubits = qregs.size
+    cbits = qk.ClassicalRegister(nb_qubits, 'cl_'+qregs.name)
+    circ.add_register(cbits)
+
+    
+    # generate Haar random (with known seeds)
+   # if type(seeds) is not list:
+   #     seeds = np.random.randint(0, 2**32, nb_qubits)
+    u_random = [qk.quantum_info.random_unitary(2, seed=seeds[ii]) 
+                for ii in range(nb_qubits)]
+    
+    # append unitaries and measure to right classical registers
+    for ii in range(nb_qubits):
+        circ.append(u_random[ii], [qregs[ii]])
+    circ.measure(qregs, cbits)
+    return circ
+
+
 def _correlation(results1, results2, key1, key2):
     """Computs the corelation between at two measurement outcomes, across 
     all instances of the measurement results
     
     NEEDED: I should update this to handel results list e.g. (results.results) 
-            so runs across mutiple jobs are suported """
+            so runs across mutiple jobs are suported 
+    ++ Checked this is properly normalized """
     # get number of random unitaries 
     nb_u = len(results1.results)
     correlation = 0
     for ii in range(nb_u): # for each unitary
+        
+        # Get counts and keys, and number of shots 
         counts1 = results1.get_counts(ii)
         counts2 = results2.get_counts(ii)
-        
         keys1 = list(counts1.keys())
         keys2 = list(counts2.keys())
-        
         norm = sum(counts1.values()) *  sum(counts2.values())
         
         # basic error handeling if not all measurements are realized
         if key1 in keys1 and key2 in keys2: 
             correlation += counts1[key1] * counts2[key2]
+    
+    # Normalize ensemble mean to number of input shots, and number of unitariess
     correlation = correlation / nb_u / norm
     return correlation
 
 
 def _gen_all_possilbe_keys(nb_qubits):
+    """ Returns a list of all possible measurement outcomes for an nb_qubit 
+        experiment
+        - E.g for 2 qubits, it returns: ['00', '01', '10', '11']"""
     vec = [bin(ii)[2:].zfill(nb_qubits) for ii in range(2**nb_qubits)]
     vec = [str(ii) for ii in vec]
     return vec
@@ -147,18 +157,9 @@ def _gen_all_possilbe_keys(nb_qubits):
 
 
 
+#%% if main
 
-
-
-
-
-
-
-
-
-
-
-if __name__ == '_main__':
+if __name__ == '__main__':
     # quick checks to see if it wokrs
     backend = provider_free.get_backend('ibmq_qasm_simulator')
     instance = qk.aqua.QuantumInstance(backend, shots=2048, optimization_level=3)
@@ -176,28 +177,23 @@ if __name__ == '_main__':
     circ.draw()
     
     # Check measurements applied to different parts of the circuit, with SAME random U
-    circs1 = random_measurement(circ, [0], nb_random=2)
+    circs1 = random_measurement(circ, qregs_block_list=[0], nb_random=2)
     circs1[0].decompose().draw()
     
-    circs2 = random_measurement(circ, [1], nb_random=2)
+    circs2 = random_measurement(circ, qregs_block_list=[1], nb_random=2)
     circs2[0].decompose().draw()
 
+    # Run simulations
     results1 = instance.execute(circs1)
     results2 = instance.execute(circs2)
 
-
+    # This gives rubish???? 
     print(cross_fidelity_from_dual_res(results1, results2))
 
+    # Check norm of _correlation
     keys =  _gen_all_possilbe_keys(2)
     check_norm = 0
     for k1 in keys:
         for k2 in keys:
             check_norm += _correlation(results1, results2, k1, k2)
     print(check_norm)
-
-
-
-
-
-
-
