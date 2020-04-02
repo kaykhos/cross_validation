@@ -7,10 +7,12 @@ Created on 02/04/2020
 
 Functions work on a single anzatz circuit and append single qubit Haar
     random unitaries at the end. 
+    NEEDED: Have to add functionality to compare only subset of measurements!
     + Can deal with two of the same size circuits running on singe device
       - Must be same size subcircuits
       - Jobs MUST be grouped at the QuantumRegister level
-    + When one or more register grou"""
+    + When one or more register group
+    """
 
 import qiskit as qk
 import numpy as np
