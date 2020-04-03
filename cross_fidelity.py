@@ -55,7 +55,7 @@ def random_measurement(circ,
     return circ_list
 
 
-def cross_fidelity_from_dual_res(results1, results2, d=2): # d=2 for qubit, 3 for qutrit
+def density_matrix_overlap(results1, results2, d=2): # d=2 for qubit, 3 for qutrit
     """Impliments Eq. 2 from Cross-Platform Verification of Intermediate Scale 
         Quantum Devices
         Basic checks at the beginning to ensure inputs are valid (not exhaustive)
@@ -76,7 +76,7 @@ def cross_fidelity_from_dual_res(results1, results2, d=2): # d=2 for qubit, 3 fo
     # Generae all possible keys may, or may not have measurement realisation
     keys  = _gen_all_possilbe_keys(nb_qubits)
     nb_hilbert_dims = d**nb_qubits
-    F = 0
+    Trace = 0
     
     # Double sum in Eq. 2, coefficient times cross corrslation
     for k1 in keys:
@@ -84,8 +84,15 @@ def cross_fidelity_from_dual_res(results1, results2, d=2): # d=2 for qubit, 3 fo
             hamming_distance = nb_qubits*sp.spatial.distance.hamming(list(k1), list(k2))
             hamming_distance = int(hamming_distance)
             coeff = (d)**nb_hilbert_dims * (-d)**(-hamming_distance)
-            F += coeff * _correlation(results1, results2, k1, k2)
+            Trace += coeff * _correlation(results1, results2, k1, k2)
             
+    return Trace
+
+def cross_fidelity(results1, results2, d=2):
+    cross_overlap = density_matrix_overlap(results1, results2, d=d)
+    first_overlap = density_matrix_overlap(results1, results1, d=d)
+    secon_overlap = density_matrix_overlap(results2, results2, d=d)
+    F = cross_overlap / max(first_overlap, secon_overlap)
     return F
 
 
@@ -124,7 +131,7 @@ def _correlation(results1, results2, key1, key2):
     NEEDED: I should update this to handel results list e.g. (results.results) 
             so runs across mutiple jobs are suported 
     ++ Checked this is properly normalized """
-    # get number of random unitaries 
+    # get number of random unitaimplimentsries 
     nb_u = len(results1.results)
     correlation = 0
     for ii in range(nb_u): # for each unitary
@@ -190,7 +197,7 @@ if __name__ == '__main__':
     results2 = instance.execute(circs2)
 
     # This gives rubish???? 
-    print(cross_fidelity_from_dual_res(results1, results2))
+    print(cross_fidelity(results1, results2))
 
     # Check norm of _correlation
     keys =  _gen_all_possilbe_keys(2)
@@ -198,4 +205,4 @@ if __name__ == '__main__':
     for k1 in keys:
         for k2 in keys:
             check_norm += _correlation(results1, results2, k1, k2)
-    print(check_norm)
+    assert round(check_norm) == 1, "Double sum over cross correlation should be 1"
