@@ -13,8 +13,6 @@ TODO:
 
 
 # Examples
-
-# Define simple circuit
     backend = provider_free.get_backend('ibmq_qasm_simulator')
     instance = qk.aqua.QuantumInstance(backend, shots=2048, optimization_level=3)
     
