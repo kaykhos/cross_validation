@@ -9,9 +9,10 @@ Functions work on a single anzatz circuit and append single qubit Haar
     random unitaries at the end. 
     NEEDED: Have to add functionality to compare only subset of measurements!
     + Can deal with two of the same size circuits running on singe device
-      - Must be same size subcircuits
-      - Jobs MUST be grouped at the QuantumRegister level
-    + When one or more register group
+    + append random seeded unitaries to list of circs
+    + prefix1 and prefix2 now spesify circ names bewteen results objects
+    
+    - Might rename prefix1/2 if it makes sense
     """
 
 import qiskit as qk
@@ -29,7 +30,9 @@ except:
 
 # Annoying to set this, but I don't want to hard code anything
 NB_QUBITS_HAVE_DIM_2 = 2
-
+NB_DEFAULT_RANDOM_CIRCUITS = 5
+NB_DEFAULT_SEED = 10
+STR_DEFAULT_PREFIX = 'Haar_Random'
 
 
 
@@ -38,27 +41,69 @@ NB_QUBITS_HAVE_DIM_2 = 2
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 
-def append_random_unitaries(circ, 
-                       qregs_block_list=[0],
-                       nb_random=5, 
-                       seed=10):
+def append_random_unitaries(circs, 
+                            nb_random=NB_DEFAULT_RANDOM_CIRCUITS,
+                            seed=NB_DEFAULT_SEED,
+                            qregs_blocks=0, # to be replaced by names
+                            prefix=STR_DEFAULT_PREFIX):
+    if type(circs) != list:
+        circs = [circs]
+    circs = _unique_circ_name(circs)
+    circ_list = []
+    for circ in circs:
+        circ_list += _append_random_unitaries_single_circ(circ,
+                                                          nb_random=nb_random,
+                                                          seed=seed,
+                                                          qregs_blocks=qregs_blocks,
+                                                          prefix=prefix)
+    return circ_list
+
+
+def _unique_circ_name(circs):
+    """" Ensures each circ in circs has a unique name (just in case) """
+    circ_names = []
+    circ_list = []
+    ct = 0
+    for circ in circs:
+        this_circ = copy.deepcopy(circ)
+        if this_circ.name in circ_names:
+            this_circ.name = this_circ.name + '_' + str(ct)
+            ct+=1
+        else:
+            circ_names.append(this_circ.name)
+        circ_list.append(this_circ)
+    return circ_list
+    
+
+def _print_names(circs):
+    for c in circs:
+        print(c.name)
+
+
+
+def _append_random_unitaries_single_circ(circ, 
+                       nb_random=NB_DEFAULT_RANDOM_CIRCUITS, 
+                       seed=NB_DEFAULT_SEED,
+                       qregs_blocks=0, # will replace this with name
+                       prefix=STR_DEFAULT_PREFIX):
     """ Creates a list of n=nb_random circuits with Haar random unitaries. If
-        mutiple qregs_block_list are passed, each block has the same unitaries
+        mutiple qregs_blocks are passed, each block has the same unitaries
         - DOES NOT modify input circuit
         TO DO: Allow passing of qregs names in the list"""
-    # input formatting 
-    if type(qregs_block_list) == int:
-        qregs_block_list = [qregs_block_list]
+    # input formatting
+    if type(qregs_blocks) == int:
+        qregs_blocks = [qregs_blocks]
     np.random.seed(seed=seed)
-    circ_list = []
     
+    circ_list = []
     # Run over different numbers of circuits
     for ii in range(nb_random):
         # Fix circuit and set random seed (so each block has SAME unitaries)
         this_circ = copy.deepcopy(circ)
-        nb_qubits = this_circ.qregs[qregs_block_list[0]].size
+        this_circ.name = prefix + '_' +  str(ii) + '_' + this_circ.name
+        nb_qubits = this_circ.qregs[qregs_blocks[0]].size
         seeds = np.random.randint(0, 2**32, nb_qubits)
-        for qregs_block in qregs_block_list:
+        for qregs_block in qregs_blocks:
             this_circ = _random_measurement_helper(this_circ, 
                                                    qregs_block=qregs_block, 
                                                     seeds=seeds)
@@ -105,6 +150,8 @@ def _random_measurement_helper(circ,
 # -----------------------------------------------------------------------------
 
 def cross_fidelity(results_in,
+                   prefix1 = STR_DEFAULT_PREFIX, 
+                   prefix2 = STR_DEFAULT_PREFIX,
                    unitary_block1=None,
                    unitary_block2=None):
     """ Accepts as input results_in is a results object, a results.to_dict()
@@ -112,9 +159,11 @@ def cross_fidelity(results_in,
         
         TO DO: add ability to pass miltiple blocks in 
         TO DO: add ability to pass list of measurement outcomes for spesific unitary"""
-    results1, results2 = _gen_results_to_compare(results_in,
+    results1, results2 = _gen_results_to_compare(results_in,                   
+                                                 prefix1 = prefix1, 
+                                                 prefix2 = prefix2,
                                                  unitary_block1=unitary_block1,
-                                                 unitary_block2=unitary_block2)       
+                                                 unitary_block2=unitary_block2)    
     cross_overlap = density_matrix_overlap(results1, results2)
     first_overlap = density_matrix_overlap(results1, results1)
     secon_overlap = density_matrix_overlap(results2, results2)
@@ -126,6 +175,7 @@ def density_matrix_overlap(results1, results2): # d=2 for qubit, 3 for qutrit
     """Impliments Eq. 2 from Cross-Platform Verification of Intermediate Scale 
         Quantum Devices
         Basic checks at the beginning to ensure inputs are valid (not exhaustive)
+        Assumes inputs are LISTS OF DICTIONARIES
         """
     # very basic checks on inputs
     nb_qubits1 = len(list(results1[0].keys())[0])
@@ -183,6 +233,8 @@ def _correlation(results1, results2, key1, key2):
 # -----------------------------------------------------------------------------
     
 def _gen_results_to_compare(results_in,
+                            prefix1=STR_DEFAULT_PREFIX,
+                            prefix2=STR_DEFAULT_PREFIX,
                             unitary_block1=None, 
                             unitary_block2=None):
     """ Helper function inputs results object OR dictionary, and returns a subset
@@ -190,34 +242,79 @@ def _gen_results_to_compare(results_in,
         - results_in can be two different objects or one single object
         - if results in is a single object, unitary blocks must be spesified
         """
-    if type(results_in) == list:
+    if type(results_in) == list: # if comparing two objects
         results1 = results_in[0]
         results2 = results_in[1]
-        results1 = _gen_measurement_list(results1)
-        results2 = _gen_measurement_list(results2)
+        
+        results1_list = _gen_measurement_list(results1)
+        results2_list = _gen_measurement_list(results2)
+        
+        # Either return unitary block list IF GIVEN otherwise by name
         if unitary_block1 != None:
-            results1 = [results1[ii] for ii in unitary_block1]
+            results1_list = [results1_list[ii] for ii in unitary_block1]
+        else:
+            results1_names = _gen_measurement_names(results1)
+            results1_list = _match_names_and_prefix(prefix1, results1_names, results1_list)
+                    
+                    
         if unitary_block2 != None:
-            results2 = [results2[ii] for ii in unitary_block2]
+            results2_list = [results2_list[ii] for ii in unitary_block2]
+        else:
+            results2_names = _gen_measurement_names(results2)
+            results2_list = _match_names_and_prefix(prefix2, results2_names, results2_list)
     else:
-        assert unitary_block1 != None, " Unitary blocks MUST be spesified for a single input"
-        assert unitary_block2 != None, " Unitary blocks MUST be spesified for a single input"
+        # assert unitary_block1 != None, " Unitary blocks MUST be spesified for a single input"
+        # assert unitary_block2 != None, " Unitary blocks MUST be spesified for a single input"
         temp_res = _gen_measurement_list(results_in)
-        results1 = [temp_res[ii] for ii in unitary_block1]
-        results2 = [temp_res[ii] for ii in unitary_block2]
-    return results1, results2
+
+        if unitary_block1 != None and unitary_block2 != None:
+            results1_list = [temp_res[ii] for ii in unitary_block1]
+            results2_list = [temp_res[ii] for ii in unitary_block2]
+        else:
+            assert prefix1 != prefix2, "For a single obj input, prefixes must be different"
+            temp_res_names = _gen_measurement_names(results_in)
+            results1_list = _match_names_and_prefix(prefix1, temp_res_names, temp_res)
+            results2_list = _match_names_and_prefix(prefix2, temp_res_names, temp_res)
+    return results1_list, results2_list
     
 
-
 def _gen_measurement_list(results_in):
+    """ Returns a LIST OF DICTIONARIES from results object/dict (all resutls)"""
     if type(results_in) == dict:
         results_in = qk.result.result.Result.from_dict(results_in)
     ls = []
     for ii in range(len(results_in.results)):
         ls.append(results_in.get_counts(ii))
     return ls
-    
 
+
+def _gen_measurement_names(results_in):
+    """ Returns a list of Circuit NAMES for each circ in result """
+    if type(results_in) == qk.result.result.Result:
+        results_in = results_in.to_dict()
+    ls = []
+    for ii in range(len(results_in['results'])):
+        ls.append(results_in['results'][ii]['header']['name'])
+    return ls
+
+
+def _match_names_and_prefix(prefix, circ_names, results_list):
+    """ Matches circuit names to prefixes """
+    ls = []
+    for ii in range(len(results_list)):
+        if prefix in circ_names[ii]:
+            ls.append(results_list[ii])
+    return ls
+
+
+
+def _gen_keys_from_lists(list_in):
+    keys = set({})
+    for rr in list_in:
+        keys = keys.union(set(rr.keys()))
+    return keys
+
+#%% No-longer needed but might be usefull
 
 def _gen_all_possilbe_keys(nb_qubits):
     """ Returns a list of all possible measurement outcomes for an nb_qubit 
@@ -229,70 +326,88 @@ def _gen_all_possilbe_keys(nb_qubits):
 
 
 
-def _gen_keys_from_lists(list_in):
-    keys = set({})
-    for rr in list_in:
-        keys = keys.union(set(rr.keys()))
-    return keys
-
-
-#%% if main
-
+#%% Example of how to use this: very basic example
+    
+    
 if __name__ == '__main__':
-    # quick checks to see if it all wokrs
+    # Define simple circuit
     backend = provider_free.get_backend('ibmq_qasm_simulator')
     instance = qk.aqua.QuantumInstance(backend, shots=2048, optimization_level=3)
     
     
-    # Define simple circuit
-    circ = qk.QuantumCircuit(qk.QuantumRegister(2, 'circ1'))
-    circ.add_register(qk.QuantumRegister(2, 'circ2'))
-    circ.rx(pi,0)
-    circ.rx(pi,1)
-    circ.barrier()
-    circ.draw()
+    # Create two circuits that have cross F = 0
+    circ1 = qk.QuantumCircuit(qk.QuantumRegister(2, 'regs_1'), name='circ1')
+    circ1.rx(pi,0)
+    circ1.rx(pi,1)
+    circ1.barrier()
     
-    # Check measurements applied to different parts of the circuit, with SAME random U
-    circs1 = append_random_unitaries(circ, qregs_block_list=[0], nb_random=10)
-    print(circs1[0].decompose())
-    
-    circs2 = append_random_unitaries(circ, qregs_block_list=[1], nb_random=10)
-    print(circs2[0].decompose())
+    circ2 = qk.QuantumCircuit(qk.QuantumRegister(2, 'regs_1'), name='circ2')
+    circ2.barrier()
 
-    # Run simulations
-    results1 = instance.execute(circs1)
-    results2 = instance.execute(circs2)
+    
+    # Append random measurements in two ways
+    #   1 each circuit independently
+    circ1m = append_random_unitaries(circ1, seed=10)
+    circ2m = append_random_unitaries(circ2, seed=10)
+    print(circ1m[0].name)
+    print(circ1m[0].decompose())
+    print(circ2m[0].name)
+    print(circ2m[0].decompose())
+    
+    #   2 Or combine them into a single job (here same circuits)
+    circ_all_m = append_random_unitaries([circ1, circ2], seed=100)
+    
+    # Also ensures right params at right points
+    print(circ_all_m[0].name)
+    print(circ_all_m[0].decompose())
+    print(circ_all_m[5].name)
+    print(circ_all_m[5].decompose())
+    
+    # note circuits now have different names:
+    _print_names(circ1m);print()
+    _print_names(circ2m);print()
+    _print_names(circ_all_m);print()
     
     
-    # Checking helper functions on single set of measurement results
-    res_list_1, res_list_2 = _gen_results_to_compare([results1, results1], [1,2,3], [4,5,6])
-    check_norm = 0
-    for k1 in _gen_all_possilbe_keys(2):
-        for k2 in _gen_all_possilbe_keys(2):
-            check_norm += _correlation(res_list_1, res_list_2, k1, k2)
+    # run simulations
+    try:
+        res1
+    except:
+        res1 = instance.execute(circ1m)
+        res2 = instance.execute(circ2m)
+        res_all = instance.execute(circ_all_m)
+        
+    # If you used append_random_unitaries() to create the circuts, you don't need
+    #   to worry about options (as long as same seed)
     
-    # Is everything working 
-    assert (check_norm) == 1, "Double sum over cross correlation should be 1"
-    assert cross_fidelity([results1, results1]) == 1, "Cross fidelity of same object should be 1"
-    assert round(5*cross_fidelity([results1, results2])) == 0, "Cross fidelity between orthogonal circuits should be < 5%"
+    # For different results objects
+    F = cross_fidelity([res1, res1])
+    print("CF from 2 qobj's (circ1 agains itsself): F = {}".format(F))
+    
+    # For the same res object, define circs be name
+    F = cross_fidelity(res_all, prefix1='circ1', prefix2='circ2')
+    print('CF from 1 qobj different namded circs in same job: F = {}'.format(F))
+    
+    # Or by place in list
+    F = cross_fidelity(res_all, unitary_block1=range(5), unitary_block2=range(5,10))
+    print("CF from 1 obj by list instead of names: F = {}".format(F))
     
     
-    # Look at much larger circuit with redundent measurements
-    qu = qk.QuantumRegister(5)
-    cl = qk.ClassicalRegister(5)
-    circ = qk.QuantumCircuit(qu, cl)
-    print(circ)
-    circ0 = append_random_unitaries(circ, nb_random=5)
-    circ1 = append_random_unitaries(circ, nb_random=5)
-    print(circ0[0])
-    print(circ1[0])
-    circ = circ0 + circ1
-    rr = instance.execute(circ)
+    # Compare res object with saved result.to_dict()
+    res1_dict = res1.to_dict()
+    F = cross_fidelity([res1_dict, res2])
+    print("CF between dict(1) and res oobject(2): F = {}".format(F))
     
-    print('CF from qobj: F = {}'.format(cross_fidelity(rr, unitary_block1=[0,1,2,3,4], unitary_block2=[5,6,7,8,9])))
-    rr = rr.to_dict()
-    print('CF from dict: F = {}'.format(cross_fidelity(rr, unitary_block1=[0,1,2,3,4], unitary_block2=[5,6,7,8,9])))
-    
-          
+    # Can also compare any and all parts:
+    # compare res1 itsself from circs_all
+    F = cross_fidelity([res1_dict, res_all], prefix2='circ1')
+    print("CF between circ1 in res_all and circ1 in res1: F = {}".format(F))
+
+    # Note, because of shot noise F's above will be differenct
+
+        
+
+
+
     
     
