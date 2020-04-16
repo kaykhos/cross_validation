@@ -8,6 +8,7 @@ Implement cross fidelity validation, between qiskit device/simulator, simulator/
   single circuit (not yet suported for cross fidelity comparison)
 
 TODO: 
-* Add batch processing: multiple CF in single job
 * Add bootstrapping for error estimation
 * Add sub-system fidelity (i.e. trace out some measurement results)
+
+see __name__ in __main__ section
