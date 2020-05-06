@@ -332,7 +332,7 @@ def _gen_all_possilbe_keys(nb_qubits):
 if __name__ == '__main__':
     # Define simple circuit
     backend = provider_free.get_backend('ibmq_qasm_simulator')
-    instance = qk.aqua.QuantumInstance(backend, shots=2048, optimization_level=3)
+    instance = qk.aqua.QuantumInstance(backend, shots=512, optimization_level=3)
     
     
     # Create two circuits that have cross F = 0
@@ -347,15 +347,15 @@ if __name__ == '__main__':
     
     # Append random measurements in two ways
     #   1 each circuit independently
-    circ1m = append_random_unitaries(circ1, seed=10)
-    circ2m = append_random_unitaries(circ2, seed=10)
+    circ1m = append_random_unitaries(circ1, seed=10, nb_random = 30)
+    circ2m = append_random_unitaries(circ2, seed=10, nb_random = 30)
     print(circ1m[0].name)
     print(circ1m[0].decompose())
     print(circ2m[0].name)
     print(circ2m[0].decompose())
     
     #   2 Or combine them into a single job (here same circuits)
-    circ_all_m = append_random_unitaries([circ1, circ2], seed=100)
+    circ_all_m = append_random_unitaries([circ1, circ2], seed=100, nb_random = 30)
     
     # Also ensures right params at right points
     print(circ_all_m[0].name)
@@ -402,12 +402,44 @@ if __name__ == '__main__':
     # compare res1 itsself from circs_all
     F = cross_fidelity([res1_dict, res_all], prefix2='circ1')
     print("CF between circ1 in res_all and circ1 in res1: F = {}".format(F))
-
     # Note, because of shot noise F's above will be differenct
-
+    
+    
+    # Test the exact state overlap (seems to be a max of ~0.92ish)
+    ls1 = [res1.get_counts(ii) for ii in range(len(res1.results))]
+    ls2 = [res2.get_counts(ii) for ii in range(len(res2.results))]
+    density_matrix_overlap(ls1, ls1)
+    density_matrix_overlap(ls2, ls2)
+    density_matrix_overlap(ls1, ls2)
+    
+    # Testing a spesiffic result: (e.g. conin flips with different coins)
+    r1 = [{'HH': 10, 'TT': 10, 'HT': 0,  'TH': 0},
+          {'HH': 0,  'TT': 0,  'HT': 10, 'TH': 10},
+          {'HH': 10, 'TT': 10,  'HT': 0,  'TH': 0}]
+    
+    # Self correlation between different outcomes: probabilitis can be read off
+    assert _correlation(r1, r1, 'TH', 'HH') == 0, "Should be zero"
+    assert _correlation(r1, r1, 'HH', 'TT') < (.5**2 + 0 + .5**2)/3 + 0.00000001, "Should be 0.166666666666666 (inc.rounding error)"
+    
+    r2 = r1[:2]
+    r3 = [{'HH': 0, 'TT': 10, 'HT': 0, 'TH': 0},
+          {'HH': 10, 'TT': 0, 'HT': 0, 'TH': 0}]
+    
+    assert _correlation(r2, r3, 'HH', 'TT') == (.5 + 0)/2, "Should be (0.5*1 + 0*0)/2"
+    
+    r4 = [{'HH': 5, 'TT': 5, 'HT': 5, 'TH': 5},
+          {'HH': 5, 'TT': 5, 'HT': 5, 'TH': 5}]
+    
+   
+    
+    c=0
+    for k1 in r3[0].keys():
+        for k2 in r3[0].keys():
+            c += _correlation(r3, r3, k1, k2)
         
+    assert c == 1, "Totally ant-correlated and each indidual string has reduced entropy"
 
-
-
+    
+    
     
     
