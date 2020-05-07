@@ -332,30 +332,37 @@ def _gen_all_possilbe_keys(nb_qubits):
 if __name__ == '__main__':
     # Define simple circuit
     backend = provider_free.get_backend('ibmq_qasm_simulator')
+    backend = qk.providers.aer.QasmSimulator()
     instance = qk.aqua.QuantumInstance(backend, shots=512, optimization_level=3)
     
     
     # Create two circuits that have cross F = 0
-    circ1 = qk.QuantumCircuit(qk.QuantumRegister(2, 'regs_1'), name='circ1')
+    circ1 = qk.QuantumCircuit(qk.QuantumRegister(5, 'regs_1'), name='circ1')
     circ1.rx(pi,0)
     circ1.rx(pi,1)
+    circ1.rx(pi,2)
+    circ1.rx(pi,3)
+    circ1.rx(pi,4)
     circ1.barrier()
     
-    circ2 = qk.QuantumCircuit(qk.QuantumRegister(2, 'regs_1'), name='circ2')
+    circ2 = qk.QuantumCircuit(qk.QuantumRegister(5, 'regs_1'), name='circ2')
     circ2.barrier()
 
     
     # Append random measurements in two ways
     #   1 each circuit independently
-    circ1m = append_random_unitaries(circ1, seed=10, nb_random = 30)
-    circ2m = append_random_unitaries(circ2, seed=10, nb_random = 30)
+    nb_random = 50
+    circ1m = append_random_unitaries(circ1, seed=10, nb_random = nb_random)
+    circ2m = append_random_unitaries(circ2, seed=10, nb_random = nb_random)
     print(circ1m[0].name)
     print(circ1m[0].decompose())
     print(circ2m[0].name)
     print(circ2m[0].decompose())
     
     #   2 Or combine them into a single job (here same circuits)
-    circ_all_m = append_random_unitaries([circ1, circ2], seed=100, nb_random = 30)
+    circ_all_m = append_random_unitaries([circ1, circ2], 
+                                         seed=10, 
+                                         nb_random = nb_random)
     
     # Also ensures right params at right points
     print(circ_all_m[0].name)
@@ -396,7 +403,7 @@ if __name__ == '__main__':
     # Compare res object with saved result.to_dict()
     res1_dict = res1.to_dict()
     F = cross_fidelity([res1_dict, res2])
-    print("CF between dict(1) and res oobject(2): F = {}".format(F))
+    print("CF between dict(1) and res object(2): F = {}".format(F))
     
     # Can also compare any and all parts:
     # compare res1 itsself from circs_all
@@ -408,10 +415,17 @@ if __name__ == '__main__':
     # Test the exact state overlap (seems to be a max of ~0.92ish)
     ls1 = [res1.get_counts(ii) for ii in range(len(res1.results))]
     ls2 = [res2.get_counts(ii) for ii in range(len(res2.results))]
-    density_matrix_overlap(ls1, ls1)
-    density_matrix_overlap(ls2, ls2)
-    density_matrix_overlap(ls1, ls2)
     
+    # Looking at overlaps exactly
+    dm_overlap = density_matrix_overlap(ls1, ls1)
+    print("Trace rho1^2 = {}".format(dm_overlap))
+    
+    dm_overlap = density_matrix_overlap(ls2, ls2)
+    print("Trace rho2^2 = {}".format(dm_overlap))
+
+    dm_overlap = density_matrix_overlap(ls1, ls2)
+    print("Trace rho1 rho2 = {}".format(dm_overlap))
+
     # Testing a spesiffic result: (e.g. conin flips with different coins)
     r1 = [{'HH': 10, 'TT': 10, 'HT': 0,  'TH': 0},
           {'HH': 0,  'TT': 0,  'HT': 10, 'TH': 10},
@@ -429,9 +443,7 @@ if __name__ == '__main__':
     
     r4 = [{'HH': 5, 'TT': 5, 'HT': 5, 'TH': 5},
           {'HH': 5, 'TT': 5, 'HT': 5, 'TH': 5}]
-    
-   
-    
+
     c=0
     for k1 in r3[0].keys():
         for k2 in r3[0].keys():
@@ -439,7 +451,5 @@ if __name__ == '__main__':
         
     assert c == 1, "Totally ant-correlated and each indidual string has reduced entropy"
 
-    
-    
     
     
