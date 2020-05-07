@@ -1,6 +1,6 @@
 *.ipynb
 *.pkl
-batch_ezample*
+batch_example*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
